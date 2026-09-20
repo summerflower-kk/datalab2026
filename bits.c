@@ -19,7 +19,7 @@
  * Difficulty: 1
  */
 int bitAnd(int x, int y) {
-    return 2;
+    return ~(~x | ~y);
 }
 
 /*
@@ -30,7 +30,7 @@ int bitAnd(int x, int y) {
  *   Difficulty: 1
  */
 int bitXor(int x, int y) {
-    return 2;
+    return ~(~x & ~y) & ~(x & y);
 }
 
 /*
@@ -50,7 +50,8 @@ int bitXor(int x, int y) {
  *   1 if x and y have the same sign , 0 otherwise.
  */
 int samesign(int x, int y) {
-    return 2;
+    /* 同号 = 符号位相同 且 "是否为 0" 相同（0 只与 0 同号） */
+    return !((x >> 31) ^ (y >> 31)) & !(!x ^ !y);
 }
 
 /*
@@ -63,7 +64,21 @@ int samesign(int x, int y) {
  *   Difficulty: 4
  */
 int logtwo(int v) {
-    return 2;
+    /* 二分找最高位 1 的位置：每轮用比较结果决定是否右移，并把位移量累加进结果 */
+    int r, s;
+    r = (v > 0xFFFF) << 4;
+    v >>= r;
+    s = (v > 0xFF) << 3;
+    v >>= s;
+    r |= s;
+    s = (v > 0xF) << 2;
+    v >>= s;
+    r |= s;
+    s = (v > 0x3) << 1;
+    v >>= s;
+    r |= s;
+    r |= (v >> 1);
+    return r;
 }
 
 /*
@@ -76,7 +91,11 @@ int logtwo(int v) {
  *    Difficulty: 2
  */
 int byteSwap(int x, int n, int m) {
-    return 2;
+    /* t = 两字节之差（异或值），分别异或回两个位置即可完成交换；n == m 时 t == 0 */
+    int sn = n << 3;
+    int sm = m << 3;
+    int t = ((x >> sn) ^ (x >> sm)) & 0xFF;
+    return x ^ (t << sn) ^ (t << sm);
 }
 
 /*
@@ -88,7 +107,12 @@ int byteSwap(int x, int n, int m) {
  *   Difficulty: 3
  */
 unsigned reverse(unsigned v) {
-    return 2;
+    /* 蝶形交换：先按 1 位交换，再 2 位、4 位、8 位、16 位 */
+    v = ((v >> 1) & 0x55555555) | ((v & 0x55555555) << 1);
+    v = ((v >> 2) & 0x33333333) | ((v & 0x33333333) << 2);
+    v = ((v >> 4) & 0x0F0F0F0F) | ((v & 0x0F0F0F0F) << 4);
+    v = ((v >> 8) & 0x00FF00FF) | ((v & 0x00FF00FF) << 8);
+    return (v >> 16) | (v << 16);
 }
 
 /*
@@ -100,7 +124,9 @@ unsigned reverse(unsigned v) {
  *   Difficulty: 3
  */
 int logicalShift(int x, int n) {
-    return 2;
+    /* 算术右移后，把高 n 位强行清零 */
+    int mask = ((1 << 31) >> n) << 1;
+    return (x >> n) & ~mask;
 }
 
 /*
@@ -112,7 +138,25 @@ int logicalShift(int x, int n) {
  *   Difficulty: 4
  */
 int leftBitCount(int x) {
-    return 2;
+    /* 二分：若最高 k 位全 1 则计数加 k 并左移 k 位，k = 16, 8, 4, 2, 1 */
+    int c, n;
+    n = !(~(x >> 16)) << 4;
+    c = n;
+    x = x << n;
+    n = !(~(x >> 24)) << 3;
+    c = c + n;
+    x = x << n;
+    n = !(~(x >> 28)) << 2;
+    c = c + n;
+    x = x << n;
+    n = !(~(x >> 30)) << 1;
+    c = c + n;
+    x = x << n;
+    n = !(~(x >> 31));
+    c = c + n;
+    x = x << n;
+    /* 上面最多数到 31，剩下的最高位仍为 1 说明 32 位全是 1 */
+    return c + ((x >> 31) & 1);
 }
 
 /*
@@ -124,7 +168,28 @@ int leftBitCount(int x) {
  *   Difficulty: 4
  */
 unsigned float_i2f(int x) {
-    return 2;
+    unsigned sign = 0;
+    unsigned a = x;
+    unsigned e = 158; /* 127 + 31：规格化后隐含位在第 31 位时的阶码 */
+    unsigned f, r, res;
+    if (x == 0)
+        return 0;
+    if (x < 0) {
+        sign = 0x80000000;
+        a = -a;
+    }
+    /* 左移到最高位为 1，每左移一位阶码减 1 */
+    while (!(a & 0x80000000)) {
+        a = a << 1;
+        e = e - 1;
+    }
+    f = (a >> 8) & 0x7FFFFF; /* 取隐含位之后的 23 位尾数 */
+    r = a & 0xFF;            /* 被丢弃的 8 位，用于舍入 */
+    res = sign | (e << 23) | f;
+    /* 就近舍入、平局取偶；进位会自然传入阶码 */
+    if ((r > 0x80) | ((r == 0x80) & (f & 1)))
+        res = res + 1;
+    return res;
 }
 
 /*
@@ -139,7 +204,17 @@ unsigned float_i2f(int x) {
  *   Difficulty: 4
  */
 unsigned floatScale2(unsigned uf) {
-    return 2;
+    unsigned sign = uf & 0x80000000;
+    unsigned exp = (uf >> 23) & 0xFF;
+    unsigned frac = uf & 0x7FFFFF;
+    if (exp == 0xFF) /* NaN 原样返回，无穷乘 2 仍是无穷 */
+        return uf;
+    if (exp == 0) /* 非规格化：尾数左移一位，进位会自然变成阶码 1 */
+        return sign | (frac << 1);
+    exp = exp + 1;
+    if (exp == 0xFF) /* 上溢为无穷，尾数必须清零 */
+        return sign | 0x7F800000;
+    return sign | (exp << 23) | frac;
 }
 
 /*
@@ -156,7 +231,24 @@ unsigned floatScale2(unsigned uf) {
  *   Difficulty: 3
  */
 int float64_f2i(unsigned uf1, unsigned uf2) {
-    return 2;
+    unsigned sign = uf2 >> 31;
+    unsigned exp = (uf2 >> 20) & 0x7FF;
+    unsigned val;
+    if (exp < 1023) /* |x| < 1，向零舍入得 0 */
+        return 0;
+    if (exp > 1054) /* |x| >= 2^32，必然越界（含 inf 与 NaN） */
+        return 0x80000000;
+    /* 补上隐含位，取最高 32 位有效数字：隐含 1 放在第 31 位 */
+    val = 0x80000000 | ((uf2 & 0xFFFFF) << 11) | (uf1 >> 21);
+    val = val >> (1054 - exp); /* 右移即向零舍入 */
+    if (sign) {
+        if (val > 0x80000000)
+            return 0x80000000;
+        return -val;
+    }
+    if (val > 0x7FFFFFFF)
+        return 0x80000000;
+    return val;
 }
 
 /*
@@ -173,5 +265,11 @@ int float64_f2i(unsigned uf1, unsigned uf2) {
  *   Difficulty: 4
  */
 unsigned floatPower2(int x) {
-    return 2;
+    if (x > 127) /* 超出最大规格化数，返回 +INF */
+        return 0x7F800000;
+    if (x < -149) /* 比最小非规格化数还小 */
+        return 0;
+    if (x < -126) /* 非规格化：尾数第 (x + 149) 位置 1 */
+        return 1 << (x + 149);
+    return (x + 127) << 23; /* 规格化：尾数为 0，只需填阶码 */
 }
